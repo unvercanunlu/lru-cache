@@ -11,7 +11,7 @@ import tr.unvercanunlu.lru_cache.service.Cache;
 
 @Slf4j
 @RequiredArgsConstructor
-public abstract class LruCacheImpl<K, V> implements Cache<K, V> {
+public abstract class BaseLruCacheImpl<K, V> implements Cache<K, V> {
 
   @Getter
   private final int capacity;
