@@ -1,12 +1,19 @@
 package tr.unvercanunlu.lru_cache.service;
 
+import java.util.Optional;
+
 public interface Cache<K, V> {
 
-  V get(K key);
+  Optional<V> retrieve(K key);
 
-  void set(K key, V value);
+  void store(K key, V value);
 
-  void remove(K key);
+  void evict(K key);
 
   void clear();
+
+  boolean checkExists(K key);
+
+  int size();
+
 }
