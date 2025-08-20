@@ -27,6 +27,7 @@ public abstract class BaseLruCacheImpl<K, V> implements LruCache<K, V> {
 
   protected BaseLruCacheImpl(int capacity) {
     ValidationUtil.checkCapacityValid(capacity);
+
     this.capacity = capacity;
   }
 
@@ -38,17 +39,16 @@ public abstract class BaseLruCacheImpl<K, V> implements LruCache<K, V> {
 
     lock.writeLock().lock();
     try {
-      Optional<DoublyLinkedNode<K, V>> retrieved = Optional.ofNullable(
-          pairs.get(key)
-      );
+      DoublyLinkedNode<K, V> retrieved = pairs.get(key);
+      if (retrieved == null) {
+        log.warn("There is no such an element with key={} in the cache.", key);
+        return Optional.empty();
+      }
 
-      retrieved.ifPresentOrElse(node -> {
-        log.info("Element with key={} is retrieved from the cache.", key);
-        removeNode(node);
-        addNodeToHead(node);
-      }, () -> log.warn("There is no such an element with key={} in the cache.", key));
-
-      return retrieved.map(DoublyLinkedNode::getValue);
+      log.info("Element with key={} is retrieved from the cache.", key);
+      removeNode(retrieved);
+      addNodeToHead(retrieved);
+      return Optional.ofNullable(retrieved.getValue());
     } finally {
       lock.writeLock().unlock();
     }
@@ -57,27 +57,23 @@ public abstract class BaseLruCacheImpl<K, V> implements LruCache<K, V> {
   @Override
   public void store(K key, V value) {
     validateKey(key);
+    ValidationUtil.checkValueExists(value);
 
     lock.writeLock().lock();
     try {
-      Optional<DoublyLinkedNode<K, V>> stored = Optional.ofNullable(
-          pairs.get(key)
-      );
-
-      stored.ifPresent(node -> {
-        node.setValue(value);
+      DoublyLinkedNode<K, V> stored = pairs.get(key);
+      if (stored != null) {
+        stored.setValue(value);
         log.info("Value of element with key={} is updated in the cache.", key);
-      });
+      } else {
+        stored = new DoublyLinkedNode<>(key, value, null, null);
 
-      DoublyLinkedNode<K, V> node = stored.orElseGet(() -> {
-        DoublyLinkedNode<K, V> created = new DoublyLinkedNode<>(key, value, null, null);
-        pairs.put(key, created);
+        pairs.put(key, stored);
         log.info("Element with key={} is stored in the cache.", key);
-        return created;
-      });
+      }
 
-      removeNode(node);
-      addNodeToHead(node);
+      removeNode(stored);
+      addNodeToHead(stored);
 
       if (pairs.size() > capacity) {
         log.warn("Cache capacity exceeded! size={} capacity={}", pairs.size(), capacity);
@@ -124,9 +120,13 @@ public abstract class BaseLruCacheImpl<K, V> implements LruCache<K, V> {
     lock.readLock().lock();
     try {
       boolean result = pairs.containsKey(key);
+
       if (result) {
         log.info("Element with key={} exists in the cache.", key);
+      } else {
+        log.info("Element with key={} does not exist in the cache.", key);
       }
+
       return result;
     } finally {
       lock.readLock().unlock();
@@ -138,7 +138,7 @@ public abstract class BaseLruCacheImpl<K, V> implements LruCache<K, V> {
     lock.readLock().lock();
     try {
       int size = pairs.size();
-      log.info("The cache contains {} elements", size);
+      log.info("The cache contains {} elements.", size);
       return size;
     } finally {
       lock.readLock().unlock();
@@ -149,8 +149,7 @@ public abstract class BaseLruCacheImpl<K, V> implements LruCache<K, V> {
   public Optional<V> peekNewest() {
     lock.readLock().lock();
     try {
-      return Optional.ofNullable(head)
-          .map(DoublyLinkedNode::getValue);
+      return peekNode(head, "newest");
     } finally {
       lock.readLock().unlock();
     }
@@ -160,8 +159,7 @@ public abstract class BaseLruCacheImpl<K, V> implements LruCache<K, V> {
   public Optional<V> peekOldest() {
     lock.readLock().lock();
     try {
-      return Optional.ofNullable(tail)
-          .map(DoublyLinkedNode::getValue);
+      return peekNode(tail, "oldest");
     } finally {
       lock.readLock().unlock();
     }
@@ -171,20 +169,30 @@ public abstract class BaseLruCacheImpl<K, V> implements LruCache<K, V> {
   public int getRemainingCapacity() {
     lock.readLock().lock();
     try {
-      return (capacity - pairs.size());
+      int remainingCapacity = capacity - pairs.size();
+      log.info("The remaining capacity of the cache: {}", remainingCapacity);
+      return remainingCapacity;
     } finally {
       lock.readLock().unlock();
     }
   }
 
   @Override
-  public void resize(int capacity) {
-    ValidationUtil.checkCapacityValid(capacity);
+  public void resize(int newCapacity) {
+    ValidationUtil.checkCapacityValid(newCapacity);
     lock.writeLock().lock();
     try {
-      this.capacity = capacity;
-      while (pairs.size() > capacity) {
+      this.capacity = newCapacity;
+      log.info("Cache capacity updated to {}", this.capacity);
+
+      int evicted = 0;
+      while (pairs.size() > this.capacity) {
         shrinkFromTail();
+        evicted++;
+      }
+
+      if (evicted > 0) {
+        log.info("{} elements evicted due to resize.", evicted);
       }
     } finally {
       lock.writeLock().unlock();
@@ -254,9 +262,19 @@ public abstract class BaseLruCacheImpl<K, V> implements LruCache<K, V> {
     if (tail != null) {
       DoublyLinkedNode<K, V> evicted = tail;
       removeNode(evicted);
+      evicted.setValue(null);
       pairs.remove(evicted.getKey());
       log.info("Element with key={} evicted due to shrink.", evicted.getKey());
     }
+  }
+
+  private Optional<V> peekNode(DoublyLinkedNode<K, V> node, String label) {
+    if (node == null) {
+      return Optional.empty();
+    }
+
+    log.info("The {} element with key={} is seen.", label, node.getKey());
+    return Optional.ofNullable(node.getValue());
   }
 
 }

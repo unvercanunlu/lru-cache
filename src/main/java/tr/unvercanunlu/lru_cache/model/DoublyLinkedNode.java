@@ -25,7 +25,7 @@ public class DoublyLinkedNode<K, V> {
   @Setter
   private DoublyLinkedNode<K, V> next = null;
 
-  // key based equals
+  // key based equals method
   @Override
   public final boolean equals(Object o) {
     if (this == o) {

@@ -12,6 +12,6 @@ public interface LruCache<K, V> extends Cache<K, V> {
 
   int getRemainingCapacity();
 
-  void resize(int capacity);
+  void resize(int newCapacity);
 
 }
